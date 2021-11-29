@@ -1,0 +1,87 @@
+#This script is a sub of termpointtognb.mos and cannot be used on it's own!
+
+#*********Initial variables********************************
+!find -name pathtotermpointtognb_mos >> path_to_pathtotermpointtognb
+$linecontent = readfile(path_to_pathtotermpointtognb)
+$path_to_pathtotermpointtognb = $linecontent[1]
+$linecontent = readfile($path_to_pathtotermpointtognb)
+$path = $linecontent[1]
+#*********Initial variables ends***************************
+
+l+ $path/log/gnbsub.log
+lt all
+
+func writedata
+	!echo '$gNodeBId'	>>			$path/tmp/gnbdata[$sequence].txt
+	!echo '$gNodeBIdLength' >>	 	$path/tmp/gnbdata[$sequence].txt
+	!echo '$gNodeBPlmnId[mcc]' >>	$path/tmp/gnbdata[$sequence].txt
+	!echo '$gNodeBPlmnId[mnc]' >>	$path/tmp/gnbdata[$sequence].txt
+	!echo '$gnbouteraddress' >>	 	$path/tmp/gnbdata[$sequence].txt
+	!echo '$gnbinneraddress' >>	 	$path/tmp/gnbdata[$sequence].txt
+	!echo '$gnbupaddress' >> 		$path/tmp/gnbdata[$sequence].txt
+endfunc
+
+func getgnbdata
+	get ^GNBCUCPFunction= gnbid$ > $gNodeBId
+	get ^GNBCUCPFunction= gNBIdLength > $gNodeBIdLength
+	get ^GNBCUCPFunction= pLMNId > $gNodeBPlmnId
+	
+	ma xtwosctpendp LocalSctpEndpoint interfaceUsed 7
+	for $mo in xtwosctpendp
+		$xtwosctpendpldn = ldn($mo)
+	done
+	ma xtwosctpEndpointRef $xtwosctpendpldn sctpEndpointRef
+	for $mo in xtwosctpEndpointRef
+		$xtwosctpEndpointldn = ldn($mo)
+	done
+	ma xtwolocalipaddress $xtwosctpEndpointldn localIpAddress
+	for $mo in xtwolocalipaddress
+		$xtwolocalipaddressldn = ldn($mo)
+	done
+	get $xtwolocalipaddressldn ^address$ > $gnbinneraddress
+	$gnbinneraddress = $gnbinneraddress -s /.* 
+	
+	ma localipendp LocalIpEndpoint interfaceList 7
+	for $mo in localipendp
+		$localipendpldn = ldn($mo)
+	done
+	ma gnbupaddressref $localipendpldn addressRef
+	for $mo in gnbupaddressref
+		$gnbupaddressldn = ldn($mo)
+	done
+	get $gnbupaddressldn ^address$ > $gnbupaddress
+	$gnbupaddress = $gnbupaddress -s /.*
+	
+	ma ipsecendp LocalIPsecEndpoint interfaceList 7
+	for $mo in ipsecendp
+		$ipsecendpldn = ldn($mo)
+	done
+	ma gnbouteraddressref $ipsecendpldn outerIpAddressRef
+	for $mo in gnbouteraddressref
+		$gnbouteraddressldn = ldn($mo)
+	done
+	get $gnbouteraddressldn ^address$ > $gnbouteraddress
+	$gnbouteraddress = $gnbouteraddress -s /.*
+endfunc
+
+func getsequence
+	$lineContent = readfile($path/tmp/sequence.txt)
+	$sequence = $lineContent[1]
+endfunc
+
+func contactind
+	!echo 'GNB CONTACT OK' >> $path/tmp/gnbcontactok[$sequence].txt
+endfunc
+
+func checkifgnb
+	pv $rats
+	if $rats ~ N
+		!echo 'NR RAT FOUND' >> $path/tmp/nrratfound[$sequence].txt
+	fi
+endfunc
+
+getsequence
+contactind
+checkifgnb
+getgnbdata
+writedata
