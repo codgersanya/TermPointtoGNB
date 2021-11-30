@@ -14,14 +14,15 @@ b) If the answer is no, then manual input dialogue opens.
 The expected input format is: nodenames (ENB-GNB) uppercase letters + numbers, separated by hyphen (e.g: 69012BB2-69012BB3).
 Having the list of wanted X2s, the script logins to each affected node automatically.
 It checks the gnbid, the transport config (especially sctp for X2 and ipaddress).
-It logins to the ENB checks, whether the wanted X2 already exists and creates it if not and checks it's op-status.
-It logins to the GNB and checks whether the X2 came up.
+It logins to the ENB checks, whether the wanted X2 already exists, verifies and corrects the IpAddresses -i needed and creates the termpoint if didn't exist.
+Finally, Checks it's op-state.
+It logins to the GNB and checks whether the X2 gets oper.
 It fetches the reult in a table.
 This loop isrepeated over all relations.
 The script checks and displays if there's no contact to the nodes.
-It checks whether the nodes are ENB or GNB indeed.
+It checks whether ENB and GNB-functions exist on the nodes.
 
-The script is written and tested on Ipsec X2s.
+The script is written and tested on Ipsec X2s with endcX2IpAddrViaS1Active = false.
 
 Results (example):
 eNodeB_name X2_LDN_enB X2_operstate_enB gNB_name X2_LDN_gNB X2_operstate_gNB
