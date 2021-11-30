@@ -1,0 +1,343 @@
+#*************************************#
+#                                     #
+#            TermPointTogNB           #
+#                                     #
+#*************************************#
+
+#This script adds X2s between ENBs-GNBs via a user-friendly dialouge format.
+#The only input needed is the name of X2-relation(s).
+
+#Prerequisites:
+#The script may be started from offline amos/moshell on ENM
+#If it is run from moshell, ensure that ~/moshell/sitefiles/ipdatabase is up to date and includes the addresses of all the affected nodes.
+#Also, always ensure that variables are set correctly in your ~/.moshellrc so that login to nodes can work -based on nodenames only.
+
+#Usage:
+#After running the script (amos termpointtognb.mos) it asks whether you have a file with the list of X2s.
+#a) If the answer is yes, then the expected format is displayed.
+#Then it asks the path/and filename.
+#b) If the answer is no, then manual input dialogue opens.
+#The expected input format is: nodenames (ENB-GNB) uppercase letters + numbers, separated by hyphen (e.g: 69012BB2-69012BB3).
+#Having the list of wanted X2s, the script logins to each affected node automatically.
+#It checks the gnbid, the transport config (especially sctp for X2 and ipaddress).
+#It logins to the ENB checks, whether the wanted X2 already exists and creates it if not and checks it's op-status.
+#It logins to the GNB and checks whether the X2 came up.
+#It fetches the reult in a table.
+#This loop isrepeated over all relations.
+#The script checks and displays if there's no contact to the nodes.
+#It checks whether the nodes are ENB or GNB indeed.
+
+#The script is written and tested on Ipsec X2s.
+
+#Results (example):
+#eNodeB_name X2_LDN_enB X2_operstate_enB gNB_name X2_LDN_gNB X2_operstate_gNB
+#69010BB2-69012BB2: ENodeBFunction=1,GUtraNetwork=1,ExternalGNodeBFunction=23430-69012,TermPointToGNB=23430-69012 0 (DISABLED) Warning: X2 CRE-FAIL on target GNB!
+#69010BB2 ENodeBFunction=1,GUtraNetwork=1,ExternalGNodeBFunction=23430-69010,TermPointToGNB=23430-69010 1 (ENABLED) 69010BB3 GNBCUCPFunction=gNBId69010,EUtraNetwork=1,ExternalENodeBFunction=auto234_30_2_69010,TermPointToENodeB=auto1 1 (ENABLED)
+#69010BB2-69013BB3: Warning: X2 CRE-FAIL on source GNB!
+
+#Structure:
+#The main script (termpointtognb_main.mos) has 3-additional subs, which need to be placed to the same folder.
+#termpointtognb_gnbsub
+#termpointtognb_enbsub
+#termpointtognb_xtworesultgnbsub
+
+#*****************************************************************************************************************************************************
+
+unset all
+
+#*********Initial variables***************************
+$standard_time = `date +%Y-%m-%d"_"%H%M`
+$folder = ~/CR_TERMPOINTTOGNB
+#*********Initial variables ends**********************
+
+$path = $folder/$standard_time
+!mkdir $folder
+!mkdir $folder/$standard_time
+!mkdir $path/tmp
+!mkdir $path/log
+
+l+mmo $path/log/main.log
+
+!find -name pathtotermpointtognb_mos >> path_to_pathtotermpointtognb
+$linecontent = readfile(path_to_pathtotermpointtognb)
+$path_to_pathtotermpointtognb = $linecontent[1]
+!rm $path_to_pathtotermpointtognb
+
+!echo '$path' >> pathtotermpointtognb_mos
+!find -name termpointtognb_gnbsub >> pathtotermpointtognb_mos
+!find -name termpointtognb_enbsub >> pathtotermpointtognb_mos
+!find -name termpointtognb_xtworesultgnbsub >> pathtotermpointtognb_mos
+
+$linecontent = readfile(pathtotermpointtognb_mos)
+$termpointtognb_gnbsub = $linecontent[2]
+$termpointtognb_enbsub = $linecontent[3]
+$termpointtognb_xtworesultgnbsub = $linecontent[4]
+
+!echo '************************************************************' >> $path/tmp/input_method.txt
+!echo '** Do you have a file with the list of TermPointToGNBs? ****' >> $path/tmp/input_method.txt
+!echo '** Please confirm! yes (y) or no (n)! **********************' >> $path/tmp/input_method.txt
+!echo '************************************************************' >> $path/tmp/input_method.txt
+
+!echo '*************************************************' >> $path/tmp/x2listinp_file.txt
+!echo '** Your file with the list of TermPointToGNBs:***' >> $path/tmp/x2listinp_file.txt
+!echo '** (Please specify! (path/filename:) ************' >> $path/tmp/x2listinp_file.txt
+!echo '** The expected format is: **********************' >> $path/tmp/x2listinp_file.txt
+!echo '** eNB-gNB (uppercase)***************************' >> $path/tmp/x2listinp_file.txt
+!echo '** e.g. *****************************************' >> $path/tmp/x2listinp_file.txt
+!echo '** 69012BB2-69012BB3 ****************************' >> $path/tmp/x2listinp_file.txt
+!echo '** 69012BB2-69021BB4 ****************************' >> $path/tmp/x2listinp_file.txt
+!echo '** 69021BB2-69021BB3 ****************************' >> $path/tmp/x2listinp_file.txt
+!echo '*************************************************' >> $path/tmp/x2listinp_file.txt
+
+!echo '*************************************************' >> $path/tmp/x2filelistnotfound.txt
+!echo '** File not found! ******************************' >> $path/tmp/x2filelistnotfound.txt
+!echo '** Please specify the correct path/filename! ****' >> $path/tmp/x2filelistnotfound.txt
+!echo '*************************************************' >> $path/tmp/x2filelistnotfound.txt
+
+!echo '*************************************************' >> $path/tmp/fileformaterror.txt
+!echo '** Incorrect file format ************************' >> $path/tmp/fileformaterror.txt
+!echo '** The expected format is: **********************' >> $path/tmp/fileformaterror.txt
+!echo '** eNB-gNB (uppercase)***************************' >> $path/tmp/fileformaterror.txt
+!echo '** e.g. *****************************************' >> $path/tmp/fileformaterror.txt
+!echo '** 69012BB2-69012BB3 ****************************' >> $path/tmp/fileformaterror.txt
+!echo '** 69012BB2-69021BB4 ****************************' >> $path/tmp/fileformaterror.txt
+!echo '** 69021BB2-69021BB3 ****************************' >> $path/tmp/fileformaterror.txt
+!echo '*************************************************' >> $path/tmp/fileformaterror.txt
+
+!echo '*************************************************' >> $path/tmp/x2listinp_manual.txt
+!echo '** Please give in the list of TermPointToGNBs!***' >> $path/tmp/x2listinp_manual.txt
+!echo '** and hit (f) when finished! *******************' >> $path/tmp/x2listinp_manual.txt
+!echo '** The expected format is: **********************' >> $path/tmp/x2listinp_manual.txt
+!echo '** eNB-gNB (uppercase)***************************' >> $path/tmp/x2listinp_manual.txt
+!echo '** e.g. *****************************************' >> $path/tmp/x2listinp_manual.txt
+!echo '** 69012BB2-69012BB3 (ENTER) ********************' >> $path/tmp/x2listinp_manual.txt
+!echo '** 69012BB2-69021BB4 (ENTER) ********************' >> $path/tmp/x2listinp_manual.txt
+!echo '** 69021BB2-69021BB3 (ENTER) ********************' >> $path/tmp/x2listinp_manual.txt
+!echo '** (f) (ENTER) **********************************' >> $path/tmp/x2listinp_manual.txt
+!echo '*************************************************' >> $path/tmp/x2listinp_manual.txt
+
+!echo '*************************************************' >> $path/tmp/x2listconfirm.txt
+!echo '** The list of TermPointToGNBs to be defined:****' >> $path/tmp/x2listconfirm.txt
+!echo '** Please confirm (y) or reject (n)! ************' >> $path/tmp/x2listconfirm.txt
+!echo '*************************************************' >> $path/tmp/x2listconfirm.txt
+
+!echo '*****************************************************************' >> $path/tmp/success.txt
+!echo '** SUCCESS: The following TermPointToGNBs have been added: ******' >> $path/tmp/success.txt
+!echo '*****************************************************************' >> $path/tmp/success.txt
+
+!echo '***************************************************************************************************************' >> $path/tmp/finish.txt
+!echo '** FINISHED: The result is the following:' >> $path/tmp/finish.txt
+!echo '** Please check your logs in:$path/tmp/log/$standard_time.log ' >> $path/tmp/finish.txt
+!echo '****************************************************************************************************************' >> $path/tmp/finish.txt
+
+func badformat
+!echo '*******************************************************************' >> $path/tmp/badformat.txt
+!echo '** TermPointToGNB=$termpointtognb[$n] is not recognized! **********' >> $path/tmp/badformat.txt
+!echo '** The expected format is: ****************************************' >> $path/tmp/badformat.txt
+!echo '** eNB-gNB (uppercase)*********************************************' >> $path/tmp/badformat.txt
+!echo '** e.g. ***********************************************************' >> $path/tmp/badformat.txt
+!echo '** 69012BB2-69012BB3 **********************************************' >> $path/tmp/badformat.txt
+!echo '*******************************************************************' >> $path/tmp/badformat.txt
+!cat $path/tmp/badformat.txt
+endfunc
+
+func fetchxtwolistfile
+	$linecontent = readfile($xtwolistfile)
+	for $n = 1 to $nr_of_lines
+		$enodeb[$n] = $linecontent[$n] -s -.*
+		$gnb[$n] = $linecontent[$n] -s .*-
+		if $linecontent[$n] ~ [0-9]+[A-Z]+[^a-z]-[0-9]+[A-Z]+[^a-z]
+			$xtwolistfileformatok = 1
+		else
+			$xtwolistfileformatok = 0
+			break
+		fi
+	done
+	$n = $nr_of_lines
+endfunc
+
+func xtwolistconfirm
+	!cat $path/tmp/xtwolist.txt
+	!echo '\n'
+	for ever
+		$xtwolistconfirm = readinput(y/n:)
+		if $xtwolistconfirm ~ y || $xtwolistconfirm ~ n
+			break		
+		else
+			!echo 'Please hit y(yes) or n(no)!'
+		fi
+	done
+	if $xtwolistconfirm ~ y
+		break
+	else if $xtwolistconfirm ~ n
+		!rm -r $path/tmp/xtwolist.txt
+	fi
+endfunc
+
+func xtwolistfileexist
+	!cat $path/tmp/x2listinp_file.txt
+	for ever
+		$xtwolistfile = readinput(path/filename:)
+		$linecontent = testfile($xtwolistfile)
+		if $nr_of_lines = 0
+			$xtwolistfileformatok = 2
+		else
+			fetchxtwolistfile
+		fi
+		if $xtwolistfileformatok = 1
+			!cp $xtwolistfile $path/tmp/xtwolist.txt
+			!cat $path/tmp/x2listconfirm.txt
+			xtwolistconfirm
+		else if $xtwolistfileformatok = 0
+			!cat $path/tmp/fileformaterror.txt
+		else if $xtwolistfileformatok = 2
+			!cat $path/tmp/x2filelistnotfound.txt
+		fi
+	done
+endfunc
+
+func manual		
+	!cat $path/tmp/x2listinp_manual.txt
+	for ever
+		$n = $n + 1
+		$termpointtognb[$n] = readinput(TermPointToGNB / f[finished]:)
+		if $termpointtognb[$n] ~ [0-9]+[A-Z]+[^a-z]-[0-9]+[A-Z]+[^a-z]
+			!echo $termpointtognb[$n] >> $path/tmp/xtwolist.txt
+			$xtwolistfile = $path/tmp/xtwolist.txt
+		else if $termpointtognb[$n] ~ f
+			!cat $path/tmp/x2listconfirm.txt
+			xtwolistconfirm
+		else
+			badformat
+		fi
+	done
+	fetchxtwolistfile
+endfunc
+
+!cat $path/tmp/input_method.txt
+for ever
+	$inputmethod = readinput(y/n:)
+	if $inputmethod ~ y
+		xtwolistfileexist
+		break
+	else if $inputmethod ~ n
+		manual
+		break
+	else
+		!echo 'Please hit y(yes) or n(no)!'
+	fi
+done
+
+func writedata
+	!rm $path/tmp/sequence.txt
+	
+	# $linecontent[1] = sequence
+	# $linecontent[2] = enodeb
+	# $linecontent[3] = gnb
+	
+	!echo '$sequence' >>					$path/tmp/sequence.txt
+	!echo '$enodeb[$sequence]' >>			$path/tmp/sequence.txt
+	!echo '$gnb[$sequence]' >>			$path/tmp/sequence.txt
+endfunc
+
+func gnbsub
+	!monode $gnb[$sequence] 'run $termpointtognb_gnbsub'
+	$linecontent = testfile($path/tmp/gnbcontactok[$sequence].txt)
+	$gnbcontactok = $nr_of_lines
+	$linecontent = testfile($path/tmp/nrratfound[$sequence].txt)
+	$nrratfound = $nr_of_lines 
+endfunc
+
+func enbsub
+	!monode $enodeb[$sequence] 'run $termpointtognb_enbsub'
+	$linecontent = testfile($path/tmp/enbcontactok[$sequence].txt)
+	$enbcontactok = $nr_of_lines
+	$linecontent = testfile($path/tmp/lteratfound[$sequence].txt)
+	$lteratfound = $nr_of_lines
+	
+	if $enbcontactok = 0
+		nocontacttoenb
+	else if $lteratfound = 0
+		noltertatfound
+	else
+		fetchresult
+		writeresult
+	fi
+endfunc
+
+func fetchresult
+	$linecontent = readfile($path/tmp/enbdata[$sequence].txt)
+	$xtwoldnenb = $linecontent[3]
+	$xtwonotcreatedonenbside = $linecontent[2]
+	$xtwoopstenbside = $linecontent[4]
+	
+	!monode $gnb[$sequence] 'run $termpointtognb_xtworesultgnbsub'
+	$linecontent = readfile($path/tmp/gnbresult[$sequence].txt)
+	$xtwonotcreatedongnbside = $linecontent[1]
+	$xtwoopstgnbside = $linecontent[2]
+	$xtwoldngnb = $linecontent[3]
+endfunc
+
+func nocontacttognb
+	!echo 'GNB: $gnb[$sequence] NO CONTACT TO GNB' >> $path/tmp/result.txt
+endfunc
+	
+func nocontacttoenb
+	!echo 'ENB: $enodeb[$sequence] NO CONTACT TO ENB' >> $path/tmp/result.txt
+endfunc
+
+func nonrrtatfound
+	!echo 'GNB: $gnb[$sequence]: NO NRRAT FOUND ON TARGET GNB' >> $path/tmp/result.txt
+endfunc
+
+func noltertatfound
+	!echo 'ENB: $enodeb[$sequence]: NO LRAT FOUND ON SOURCE ENB' >> $path/tmp/result.txt
+endfunc
+
+func writeresult
+	if $xtwonotcreatedonenbside = 1
+		!echo '$enodeb[$sequence]-$gnb[$sequence]: Warning: X2 CRE-FAIL on source ENB!' >> $path/tmp/result.txt	
+	else if $xtwonotcreatedongnbside = 1
+		!echo '$enodeb[$sequence]-$gnb[$sequence]: $xtwoldnenb $xtwoopstenbside Warning: X2 CRE-FAIL on target GNB!' >> $path/tmp/result.txt
+	else
+		!echo '$enodeb[$sequence] $xtwoldnenb	$xtwoopstenbside	$gnb[$sequence]	$xtwoldngnb	$xtwoopstgnbside' >> $path/tmp/result.txt	
+	fi
+endfunc
+
+func displayresult
+	!cat $path/tmp/finish.txt
+	!cat $path/tmp/result.txt
+	!echo 'You can find the same in $path/tmp/result.txt'
+endfunc
+	
+func header
+	!echo 'eNodeB_name	X2_LDN_enB	X2_operstate_enB	gNB_name	X2_LDN_gNB	X2_operstate_gNB' >> $path/tmp/result.txt
+endfunc
+
+header
+
+for $sequence = 1 to $n
+
+	unset $gnbcontactok
+	unset $nrratfound
+	unset $enbcontactok
+	unset $lteratfound
+	
+	writedata
+	gnbsub
+	if $gnbcontactok = 0
+		nocontacttognb
+	else if $nrratfound = 0
+		nonrrtatfound
+	else
+		enbsub
+	fi
+done
+
+displayresult
+	
+return
+
+!rm pathtotermpointtognb_mos
+
+l-
