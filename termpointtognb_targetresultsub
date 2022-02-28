@@ -1,0 +1,68 @@
+#This script is a sub of termpointtognb.mos and cannot be used on it's own!
+
+unset all
+
+#*********Initial variables********************************
+#Find main path and termpointtognb_functions
+!find ~/ -name pathtotermpointtognb >> 					path
+$linecontent = 											readfile(path)
+$path = 												$linecontent[1]
+$linecontent = 											readfile($path)
+$path = $path -s /pathtotermpointtognb
+!rm -f path
+#*********Initial variables ends***************************
+
+l+ $path/log/targetresult.log
+lt all
+
+func getdata
+	$linecontent = readfile($path/tmp/sequence.txt)
+	$sequence = $linecontent[1]
+	$linecontent = readfile($path/tmp/enbdata[$sequence].txt)
+	$enodebid = $linecontent[1]
+endfunc
+
+func xtwocheck
+	for $mo in extenbf
+		$extenbfldn = ldn($mo)
+	done
+	lk $extenbfldn,TermPointToENodeB
+	if $nr_of_mos = 0
+		$xtwonotcreatedongnbside = 1
+	else
+		for $mo in lk_group
+			$xtwoldn = ldn($mo)
+		done
+		get $xtwoldn operationalstate > $xtwoopstgnbside
+	fi
+endfunc
+
+
+func extenbfcheck
+		ma extenbf ExternalENodeBFunction eNodeBId ^$enodebid$
+		if $nr_of_mos > 0
+			xtwocheck
+		else
+			$xtwonotcreatedongnbside = 1
+		fi
+endfunc
+
+func writedata
+	unset $linecontent
+	# $linecontent[1] = $xtwonotcreatedongnbside
+	# $linecontent[2] = $xtwoopstgnbside
+	# $linecontent[3] = $xtwoldn
+	
+	!echo '$xtwonotcreatedongnbside' >>	$path/tmp/gnbresult[$sequence].txt
+	!echo '$xtwoopstgnbside' >>			$path/tmp/gnbresult[$sequence].txt
+	!echo '$xtwoldn' >>					$path/tmp/gnbresult[$sequence].txt
+endfunc
+
+func startlog
+	l+ $path/tmp/$gnb[$sequence].log
+endfunc
+
+getdata
+extenbfcheck
+writedata
+l-
