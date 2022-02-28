@@ -1,0 +1,179 @@
+#This script is a sub of termpointtognb.mos and cannot be used on it's own!
+
+unset all
+
+#*********Initial variables********************************
+#Find main path and termpointtognb_functions
+!find ~/ -name pathtotermpointtognb >> 					path
+$linecontent = 											readfile(path)
+$path = 												$linecontent[1]
+$linecontent = 											readfile($path)
+$path = $path -s /pathtotermpointtognb
+!rm -f path
+$xtwonotcreatedonenbside = 0
+$existingxtwo = NO
+$addressadjusted = NO
+$gNodeBPlmnId[mncLength] = 2
+#*********Initial variables ends***************************
+
+l+ $path/log/source.log
+
+
+
+lt all
+
+func admstate
+	set $xtwoldn administrativeState 1
+endfunc
+
+func fetchdataforxtwo
+	$lineContent = readfile($path/tmp/gnbdata[$sequence].txt)
+	$gnbouteraddress =	$lineContent[5]
+	$gnbinneraddress =	$lineContent[6]
+	$gnbupaddress = 	$lineContent[7]
+endfunc
+
+func xtwocr
+	crn $xtwoldn
+	end
+	pr $xtwoldn$
+	if $nr_of_mos = 0
+		$xtwonotcreatedonenbside = 1
+	fi
+	set $xtwoldn ipAddress $gnbinneraddress
+	set $xtwoldn upIpAddress $gnbupaddress
+	set $xtwoldn ipsecEpAddress $gnbouteraddress
+	set $xtwoldn administrativeState 1
+endfunc
+
+func checkipaddress
+	pv $ipaddress
+	pv $gnbinneraddress
+	if $ipaddress != $gnbinneraddress
+		set $xtwoldn administrativeState 0
+		set $xtwoldn ipAddress $gnbinneraddress
+		set $xtwoldn administrativeState 1
+		$addressadjusted = YES
+	fi
+	pv $upIpAddress
+	pv $gnbupaddress
+	if $upIpAddress != $gnbupaddress
+		set $xtwoldn administrativeState 0
+		set $xtwoldn upIpAddress $gnbupaddress
+		set $xtwoldn administrativeState 1
+		$addressadjusted = YES
+	fi
+	pv $ipsecEpAddress
+	pv $gnbouteraddress
+	if $ipsecEpAddress != $gnbouteraddress	
+		set $xtwoldn administrativeState 0
+		set $xtwoldn  $gnbouteraddress
+		set $xtwoldn administrativeState 1
+		$addressadjusted = YES
+	fi
+endfunc
+
+func xtwocheck
+	fetchdataforxtwo
+	ma xtwo TermPointToGNB= ^ipAddress $gnbinneraddress$
+		for $mo in xtwo
+			$xtwoldn = ldn($mo)
+		done
+	pr $xtwoldn
+	if $nr_of_mos > 0
+		$existingxtwo = YES
+		get $xtwoldn ^ipaddress$ > $ipaddress
+		get $xtwoldn ^upIpAddress$ > $upIpAddress
+		get $xtwoldn ^ipsecEpAddress$ > $ipsecEpAddress
+		checkipaddress
+	else
+		$xtwoldn = $extgnbfldn,TermPointToGNB=$gNodeBPlmnId[mcc]$gNodeBPlmnId[mnc]-$gNodeBId
+		xtwocr
+		wait 3
+	fi
+	get $xtwoldn operationalState > $xtwoopstenbside
+endfunc
+
+func fetchdataforextgnbf
+	$lineContent = readfile($path/tmp/gnbdata[$sequence].txt)
+	$gNodeBId =					$lineContent[1]
+	$gNodeBIdLength =			$lineContent[2]
+	$gNodeBPlmnId[mcc] =		$lineContent[3]
+	$gNodeBPlmnId[mnc] =		$lineContent[4]
+endfunc
+
+func extgnbfcr
+	$extgnbfldn = $gutranwldn,ExternalGNodeBFunction=$gNodeBPlmnId[mcc]$gNodeBPlmnId[mnc]-$gNodeBId
+	crn $extgnbfldn
+	gNodeBId $gNodeBId
+	gNodeBIdLength $gNodeBIdLength
+	gNodeBPlmnId mcc=$gNodeBPlmnId[mcc],mnc=$gNodeBPlmnId[mnc],mncLength=$gNodeBPlmnId[mncLength]
+	end
+endfunc
+
+func extgnbfcheck
+	fetchdataforextgnbf
+	mr extgnbf
+	ma extgnbf ExternalGNodeBFunction gNodeBId ^$gNodeBId$ 
+	if $nr_of_mos = 0
+		extgnbfcr
+	else
+		for $mo in extgnbf
+			$extgnbfldn = ldn($mo)
+		done
+	fi
+endfunc	
+
+func mocheck
+	ma enbf ^ENodeBFunction=
+	for $mo in enbf
+		$enbfldn = ldn($mo)
+	done
+	
+	get $enbfldn enbid > $enbid
+	
+	ma gutranw ^GUtraNetwork=
+	if $nr_of_mos = 0
+		crn $enbfldn,GUtraNetwork=1
+		end
+	else
+	for $mo in gutranw
+		$gutranwldn = ldn($mo)
+	done
+	fi
+endfunc
+
+func writedata
+	!echo '$enbid' >>						$path/tmp/enbdata[$sequence].txt
+	!echo '$xtwonotcreatedonenbside' >>		$path/tmp/enbdata[$sequence].txt
+	!echo '$xtwoldn' >>						$path/tmp/enbdata[$sequence].txt
+	!echo '$xtwoopstenbside' >>				$path/tmp/enbdata[$sequence].txt
+	!echo '$existingxtwo' >>				$path/tmp/enbdata[$sequence].txt
+	!echo '$addressadjusted' >>				$path/tmp/enbdata[$sequence].txt	
+endfunc
+
+func getsequence
+	$lineContent = readfile($path/tmp/sequence.txt)
+	$sequence = $lineContent[1]
+	$enodeb = $lineContent[2]
+	$gnb = $lineContent[3]
+endfunc
+
+func contactind
+	!echo 'ENB CONTACT OK' >> $path/tmp/enbcontactok[$sequence].txt
+endfunc
+	
+func checkifenb
+	pv $rats
+	if $rats ~ L
+		!echo 'LTE RAT FOUND' >> $path/tmp/lteratfound[$sequence].txt
+	fi
+endfunc
+
+getsequence
+contactind
+checkifenb
+mocheck
+extgnbfcheck
+xtwocheck
+writedata
