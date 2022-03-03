@@ -5,7 +5,7 @@
 #                                     #
 #*************************************#
 
-termpointtognodeb_main.mos adds X2NR-interfaces to nodes.
+termpointtognb_main.mos adds X2NR-interfaces to nodes.
 The script checks the existence of all relevant MOs, adds them on eNB side and checks the autocreation on gNB-side.
 The only input needed is the list of the wanted X2NR-relation(s), like:
 
